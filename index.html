@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>탄막 피하기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Press+Start+2P&display=swap">
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<style>
+/* Layout: arena canvas on the left, leaderboard column on the right; stacks on narrow screens. */
+:root {
+  --bg: #0e0f1a;
+  --panel: #171a2b;
+  --line: #2a2e4a;
+  --fg: #e8e9f5;
+  --dim: #8a8fb3;
+  --mint: #7cf2c2;
+  --coral: #ff5d73;
+  --amber: #ffc857;
+  --violet: #b388ff;
+  --f-ko: "Do Hyeon", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  --f-px: "Press Start 2P", ui-monospace, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--f-ko); font-size: 17px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+#app { display: flex; gap: 20px; align-items: flex-start; max-width: 100%; }
+#left { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+h1 { margin: 0; font-size: 30px; font-weight: 400; letter-spacing: 1px; }
+h1 span { color: var(--coral); }
+#who { color: var(--dim); font-size: 16px; display: flex; gap: 8px; align-items: center; }
+#who b { color: var(--mint); font-weight: 400; }
+#mode { font-family: var(--f-px); font-size: 8px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 3px; color: var(--dim); }
+#stage { position: relative; border: 2px solid var(--line); background: #000; line-height: 0; touch-action: none; }
+canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+#hud {
+  position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: space-between;
+  padding: 8px 10px; font-family: var(--f-px); font-size: 12px; line-height: 1; pointer-events: none;
+  text-shadow: 2px 2px 0 #000;
+}
+#hud #best { color: var(--amber); }
+.overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; background: rgba(8, 9, 16, .78); line-height: 1.35; text-align: center; padding: 16px;
+}
+.overlay h2 { margin: 0; font-weight: 400; font-size: 34px; }
+.big { font-family: var(--f-px); font-size: 30px; color: var(--mint); }
+.small { color: var(--dim); font-size: 16px; }
+.newbest { color: var(--amber); font-size: 22px; }
+.err { color: var(--coral); font-size: 16px; min-height: 1.3em; }
+form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+input[type=text] {
+  font: inherit; font-size: 22px; padding: 8px 12px; width: 220px; max-width: 100%;
+  background: var(--panel); color: var(--fg); border: 2px solid var(--line); border-radius: 4px; outline: none;
+}
+input[type=text]:focus { border-color: var(--mint); }
+button {
+  font: inherit; font-size: 20px; padding: 8px 18px; cursor: pointer;
+  background: var(--mint); color: #08241a; border: 0; border-radius: 4px; box-shadow: 0 3px 0 #3a9c78;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #3a9c78; }
+button.ghost { background: transparent; color: var(--dim); box-shadow: none; border: 2px solid var(--line); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+kbd { font-family: var(--f-px); font-size: 10px; padding: 3px 5px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); }
+button kbd { background: rgba(8, 36, 26, .15); border-color: rgba(8, 36, 26, .35); color: #08241a; margin-left: 6px; vertical-align: 2px; }
+#help { color: var(--dim); font-size: 15px; display: flex; gap: 14px; flex-wrap: wrap; }
+
+#board { width: 280px; background: var(--panel); border: 2px solid var(--line); padding: 14px 14px 10px; }
+#board h3 { margin: 0 0 4px; font-weight: 400; font-size: 24px; display: flex; justify-content: space-between; align-items: baseline; }
+#board h3 small { font-size: 14px; color: var(--dim); }
+#list { list-style: none; margin: 8px 0 0; padding: 0; font-size: 18px; }
+#list li { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; padding: 5px 4px; border-bottom: 1px dashed var(--line); align-items: baseline; }
+#list li .r { font-family: var(--f-px); font-size: 10px; color: var(--dim); }
+#list li .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#list li .s { font-family: var(--f-px); font-size: 10px; font-variant-numeric: tabular-nums; }
+#list li.g1 .r, #list li.g1 .s { color: var(--amber); }
+#list li.g2 .r, #list li.g2 .s { color: #d6dcf0; }
+#list li.g3 .r, #list li.g3 .s { color: #e09a6a; }
+#list li.me { background: rgba(124, 242, 194, .1); }
+#list li.me .n { color: var(--mint); }
+#list .empty { color: var(--dim); display: block; border: 0; }
+#mine { margin-top: 10px; color: var(--dim); font-size: 16px; min-height: 1.3em; }
+
+@media (max-width: 900px) {
+  #app { flex-direction: column; align-items: stretch; }
+  #board { width: auto; }
+}
+@media (prefers-reduced-motion: reduce) { button:active { transform: none; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="left">
+    <header>
+      <h1>탄막 <span>피하기</span></h1>
+      <div id="who"><span id="mode">OFFLINE</span><span id="whoName" hidden>닉네임 <b id="nickLabel"></b></span></div>
+    </header>
+    <div id="stage">
+      <canvas id="cv" width="320" height="180"></canvas>
+      <div id="hud"><span id="time">0.00</span><span id="best">BEST 0.00</span></div>
+
+      <div class="overlay" id="ovNick" hidden>
+        <h2>닉네임을 정하세요</h2>
+        <form id="nickForm" autocomplete="off">
+          <input type="text" id="nickInput" maxlength="12" placeholder="최대 12자" aria-label="닉네임">
+          <button type="submit" id="nickBtn">시작</button>
+        </form>
+        <div class="err" id="nickErr"></div>
+        <div class="small">처음 쓴 기기에서만 그 닉네임으로 기록이 저장돼요.</div>
+      </div>
+
+      <div class="overlay" id="ovReady" hidden>
+        <h2>날아오는 탄을 피하세요</h2>
+        <div class="small">오래 버틸수록 탄이 많아지고 빨라집니다.</div>
+        <button id="startBtn">시작하기 <kbd>SPACE</kbd></button>
+      </div>
+
+      <div class="overlay" id="ovPause" hidden>
+        <h2>일시정지</h2>
+        <button id="resumeBtn">계속하기 <kbd>SPACE</kbd></button>
+      </div>
+
+      <div class="overlay" id="ovOver" hidden>
+        <div class="small">버틴 시간</div>
+        <div class="big" id="overTime">0.00</div>
+        <div class="newbest" id="overNew" hidden>새 최고 기록!</div>
+        <div class="small" id="overInfo"></div>
+        <div class="row">
+          <button id="retryBtn">다시하기 <kbd>SPACE</kbd></button>
+          <button class="ghost" id="changeNickBtn">닉네임 변경</button>
+        </div>
+      </div>
+    </div>
+    <div id="help">
+      <span><kbd>WASD</kbd> / <kbd>←↑↓→</kbd> 이동</span>
+      <span><kbd>SHIFT</kbd> 느리게 (판정점 표시)</span>
+      <span>터치·마우스: 누른 채로 드래그</span>
+      <span><kbd>P</kbd> 일시정지</span>
+    </div>
+  </div>
+
+  <aside id="board">
+    <h3>랭킹 <small id="boardMeta"></small></h3>
+    <ol id="list"><li class="empty">불러오는 중…</li></ol>
+    <div id="mine"></div>
+  </aside>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+// ───────────────────────── storage helpers ─────────────────────────
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+function deviceToken() {
+  let t = store.get('dodge.token');
+  if (!t || t.length < 16) {
+    const a = new Uint8Array(16); crypto.getRandomValues(a);
+    t = Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
+    store.set('dodge.token', t);
+  }
+  return t;
+}
+const TOKEN = deviceToken();
+
+// ───────────────────────── backends ─────────────────────────
+// Both expose: claim(nick) -> canonical nick, submit(nick, ms) -> best ms,
+// best(nick) -> ms|0, top(n) -> [{nickname, best_ms}], rank(ms) -> {rank, total}
+function errCode(e) {
+  const m = String((e && (e.message || e.details)) || e || '');
+  if (m.includes('nickname_taken')) return 'taken';
+  if (m.includes('bad_nickname')) return 'bad_nickname';
+  return 'network';
+}
+
+function remoteBackend(url, key) {
+  const sb = window.supabase.createClient(url, key, { auth: { persistSession: false } });
+  return {
+    online: true,
+    async claim(nick) {
+      const { data, error } = await sb.rpc('claim_nickname', { p_nickname: nick, p_token: TOKEN });
+      if (error) throw errCode(error);
+      return data;
+    },
+    async submit(nick, ms) {
+      const { data, error } = await sb.rpc('submit_score', { p_nickname: nick, p_token: TOKEN, p_ms: ms });
+      if (error) throw errCode(error);
+      return data;
+    },
+    async best(nick) {
+      const { data, error } = await sb.from('scores').select('best_ms').eq('nickname', nick).maybeSingle();
+      if (error) throw errCode(error);
+      return data ? data.best_ms : 0;
+    },
+    async top(n) {
+      const { data, error } = await sb.from('scores').select('nickname,best_ms').order('best_ms', { ascending: false }).order('updated_at', { ascending: true }).limit(n);
+      if (error) throw errCode(error);
+      return data || [];
+    },
+    async rank(ms) {
+      const [a, b] = await Promise.all([
+        sb.from('scores').select('nickname', { count: 'exact', head: true }).gt('best_ms', ms),
+        sb.from('scores').select('nickname', { count: 'exact', head: true }),
+      ]);
+      if (a.error || b.error) throw errCode(a.error || b.error);
+      return { rank: (a.count || 0) + 1, total: b.count || 0 };
+    },
+  };
+}
+
+function localBackend() {
+  const load = () => { try { return JSON.parse(store.get('dodge.local') || '') || { players: {}, scores: {} }; } catch { return { players: {}, scores: {} }; } };
+  const save = d => store.set('dodge.local', JSON.stringify(d));
+  return {
+    online: false,
+    async claim(nick) {
+      const d = load(); const k = nick.toLowerCase();
+      if (!d.players[k]) { d.players[k] = { nickname: nick, token: TOKEN }; save(d); return nick; }
+      if (d.players[k].token !== TOKEN) throw 'taken';
+      return d.players[k].nickname;
+    },
+    async submit(nick, ms) {
+      const d = load(); d.scores[nick] = Math.max(d.scores[nick] || 0, ms); save(d); return d.scores[nick];
+    },
+    async best(nick) { return load().scores[nick] || 0; },
+    async top(n) {
+      return Object.entries(load().scores).map(([nickname, best_ms]) => ({ nickname, best_ms }))
+        .sort((a, b) => b.best_ms - a.best_ms).slice(0, n);
+    },
+    async rank(ms) {
+      const all = Object.values(load().scores);
+      return { rank: all.filter(v => v > ms).length + 1, total: all.length };
+    },
+  };
+}
+
+const CFG = window.DODGE_CONFIG || {};
+const backend = (CFG.SUPABASE_URL && CFG.SUPABASE_KEY && window.supabase)
+  ? remoteBackend(CFG.SUPABASE_URL, CFG.SUPABASE_KEY) : localBackend();
+
+// ───────────────────────── DOM ─────────────────────────
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+ctx.imageSmoothingEnabled = false;
+$('mode').textContent = backend.online ? 'ONLINE' : 'OFFLINE';
+$('mode').title = backend.online ? '온라인 랭킹에 저장됩니다' : '이 브라우저에만 저장됩니다 (config.js 미설정)';
+if (backend.online) { $('mode').style.color = 'var(--mint)'; $('mode').style.borderColor = 'var(--mint)'; }
+
+const fmt = ms => (ms / 1000).toFixed(2);
+const overlays = ['ovNick', 'ovReady', 'ovPause', 'ovOver'];
+function show(id) { overlays.forEach(o => { $(o).hidden = o !== id; }); }
+
+function fit() {
+  const boardW = innerWidth > 900 ? 320 : 0;
+  const availW = Math.max(200, innerWidth - 40 - boardW);
+  const availH = Math.max(150, innerHeight - (innerWidth > 900 ? 120 : 420));
+  let s = Math.min(availW / W, availH / H);
+  s = s >= 2 ? Math.floor(s) : Math.max(1, s);
+  if (innerWidth <= 900) s = Math.min((innerWidth - 36) / W, Math.max(s, 1));
+  cv.style.width = Math.round(W * s) + 'px';
+  cv.style.height = Math.round(H * s) + 'px';
+}
+addEventListener('resize', fit); fit();
+
+// ───────────────────────── player profile ─────────────────────────
+let nick = null, myBest = 0, pendingBest = 0;
+
+function setNick(n) {
+  nick = n; store.set('dodge.nick', n);
+  $('nickLabel').textContent = n; $('whoName').hidden = false;
+}
+async function loadBest() {
+  try { myBest = Math.max(myBest, await backend.best(nick)); } catch {}
+  $('best').textContent = 'BEST ' + fmt(myBest);
+}
+
+$('nickForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const v = $('nickInput').value.trim();
+  $('nickErr').textContent = '';
+  if (!v) { $('nickErr').textContent = '닉네임을 입력하세요.'; return; }
+  if ([...v].length > 12) { $('nickErr').textContent = '12자 이하로 정해 주세요.'; return; }
+  $('nickBtn').disabled = true;
+  try {
+    const canonical = await backend.claim(v);
+    if (canonical !== nick) myBest = 0;
+    setNick(canonical);
+    await loadBest();
+    renderBoard();
+    toReady();
+  } catch (c) {
+    $('nickErr').textContent = c === 'taken' ? '이미 다른 사람이 쓰는 닉네임이에요. 다른 걸로 정해 주세요.'
+      : c === 'bad_nickname' ? '쓸 수 없는 닉네임이에요.'
+      : '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요.';
+  } finally { $('nickBtn').disabled = false; }
+});
+function toNick() {
+  mode = 'nick'; show('ovNick');
+  $('nickInput').value = nick || ''; $('nickErr').textContent = '';
+  setTimeout(() => $('nickInput').focus(), 0);
+}
+
+// ───────────────────────── leaderboard ─────────────────────────
+let boardBusy = false;
+async function renderBoard() {
+  if (boardBusy) return; boardBusy = true;
+  const list = $('list');
+  try {
+    const rows = await backend.top(20);
+    list.textContent = '';
+    if (!rows.length) {
+      const li = document.createElement('li'); li.className = 'empty';
+      li.textContent = '아직 기록이 없어요. 첫 기록을 남겨 보세요!'; list.appendChild(li);
+    }
+    rows.forEach((r, i) => {
+      const li = document.createElement('li');
+      if (i < 3) li.classList.add('g' + (i + 1));
+      if (nick && r.nickname === nick) li.classList.add('me');
+      const a = document.createElement('span'); a.className = 'r'; a.textContent = i + 1;
+      const b = document.createElement('span'); b.className = 'n'; b.textContent = r.nickname;
+      const c = document.createElement('span'); c.className = 's'; c.textContent = fmt(r.best_ms);
+      li.append(a, b, c); list.appendChild(li);
+    });
+    $('boardMeta').textContent = backend.online ? 'TOP 20' : '이 브라우저 기록';
+    if (nick && myBest > 0) {
+      const { rank, total } = await backend.rank(myBest);
+      $('mine').textContent = `내 최고 ${fmt(myBest)}초 · ${rank}위 / ${total}명`;
+    } else $('mine').textContent = '';
+  } catch {
+    list.textContent = '';
+    const li = document.createElement('li'); li.className = 'empty';
+    li.textContent = '랭킹을 불러오지 못했어요. 잠시 후 자동으로 다시 시도합니다.'; list.appendChild(li);
+  } finally { boardBusy = false; }
+}
+setInterval(() => { if (mode !== 'play') renderBoard(); }, 30000);
+
+// ───────────────────────── sprites ─────────────────────────
+const spriteCache = new Map();
+function ball(r, edge, core) {
+  const key = r + edge + core;
+  let c = spriteCache.get(key);
+  if (c) return c;
+  const s = r * 2 + 1;
+  c = document.createElement('canvas'); c.width = c.height = s;
+  const g = c.getContext('2d');
+  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+    const d2 = (x - r) ** 2 + (y - r) ** 2;
+    if (d2 <= r * r + r * 0.6) {
+      g.fillStyle = d2 <= (r - 1.1) ** 2 ? core : edge;
+      g.fillRect(x, y, 1, 1);
+    }
+  }
+  spriteCache.set(key, c);
+  return c;
+}
+const KINDS = {
+  aim:    { r: 2, edge: '#ff5d73', core: '#ffd1d8' },
+  line:   { r: 2, edge: '#ff8a5c', core: '#ffe1cf' },
+  big:    { r: 5, edge: '#ffc857', core: '#fff1c9' },
+  ring:   { r: 2, edge: '#b388ff', core: '#eadcff' },
+  sniper: { r: 2, edge: '#ffffff', core: '#ff5d73' },
+};
+
+// ───────────────────────── game state ─────────────────────────
+const STEP = 1 / 120;
+const P_SPEED = 92, P_SLOW = 38, P_R = 2.2;
+let mode = 'boot';
+let t = 0, player, bullets, warns, parts;
+let spawnT, ringT, sniperT, bigT, shake = 0, deathT = 0, flash = 0;
+
+function reset() {
+  t = 0; player = { x: W / 2, y: H / 2 };
+  bullets = []; warns = []; parts = [];
+  spawnT = 0.8; ringT = 15; sniperT = 28; bigT = 20; shake = 0; flash = 0;
+  $('time').textContent = '0.00';
+}
+reset();
+
+const rnd = (a, b) => a + Math.random() * (b - a);
+function edgePoint(m = 6) {
+  const side = Math.floor(Math.random() * 4);
+  if (side === 0) return { x: rnd(0, W), y: -m };
+  if (side === 1) return { x: W + m, y: rnd(0, H) };
+  if (side === 2) return { x: rnd(0, W), y: H + m };
+  return { x: -m, y: rnd(0, H) };
+}
+function fire(x, y, ang, speed, kind) {
+  bullets.push({ x, y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, kind, r: KINDS[kind].r });
+}
+const baseSpeed = () => Math.min(150, 52 + t * 1.25);
+
+function spawnAimed() {
+  const p = edgePoint();
+  const a = Math.atan2(player.y - p.y, player.x - p.x) + rnd(-0.3, 0.3);
+  fire(p.x, p.y, a, baseSpeed() * rnd(0.9, 1.15), 'aim');
+}
+function spawnLine() {
+  // a straight bullet crossing the arena, not aimed
+  const p = edgePoint();
+  const a = Math.atan2(H / 2 - p.y + rnd(-60, 60), W / 2 - p.x + rnd(-100, 100));
+  fire(p.x, p.y, a, baseSpeed() * 0.85, 'line');
+}
+function spawnRingWarn() {
+  let x, y, tries = 0;
+  do { x = rnd(24, W - 24); y = rnd(20, H - 20); tries++; }
+  while (Math.hypot(x - player.x, y - player.y) < 60 && tries < 30);
+  warns.push({ type: 'ring', x, y, life: 0.9, max: 0.9 });
+}
+function spawnSniperWarn() {
+  const p = edgePoint(2);
+  const a = Math.atan2(player.y - p.y, player.x - p.x);
+  warns.push({ type: 'sniper', x: p.x, y: p.y, a, life: 0.75, max: 0.75 });
+}
+
+function step(dt) {
+  t += dt;
+
+  // movement
+  let dx = 0, dy = 0;
+  if (keys.has('ArrowLeft') || keys.has('KeyA')) dx--;
+  if (keys.has('ArrowRight') || keys.has('KeyD')) dx++;
+  if (keys.has('ArrowUp') || keys.has('KeyW')) dy--;
+  if (keys.has('ArrowDown') || keys.has('KeyS')) dy++;
+  if (dx || dy) {
+    const l = Math.hypot(dx, dy), sp = slow() ? P_SLOW : P_SPEED;
+    player.x += dx / l * sp * dt; player.y += dy / l * sp * dt;
+  }
+  player.x += dragDX; player.y += dragDY; dragDX = dragDY = 0;
+  player.x = Math.max(3, Math.min(W - 3, player.x));
+  player.y = Math.max(3, Math.min(H - 3, player.y));
+
+  // spawning
+  spawnT -= dt;
+  if (spawnT <= 0) {
+    spawnT = Math.max(0.085, 0.55 * Math.pow(0.968, t));
+    spawnAimed();
+    if (t > 6 && Math.random() < 0.4) spawnLine();
+  }
+  if (t > 15) { ringT -= dt; if (ringT <= 0) { ringT = Math.max(2.2, 6.5 - t * 0.05); spawnRingWarn(); } }
+  if (t > 20) { bigT -= dt; if (bigT <= 0) { bigT = Math.max(0.9, 3 - t * 0.025); const p = edgePoint(8); fire(p.x, p.y, Math.atan2(player.y - p.y, player.x - p.x) + rnd(-0.15, 0.15), baseSpeed() * 0.55, 'big'); } }
+  if (t > 28) { sniperT -= dt; if (sniperT <= 0) { sniperT = Math.max(1.6, 5.5 - t * 0.05); spawnSniperWarn(); } }
+
+  for (let i = warns.length - 1; i >= 0; i--) {
+    const w = warns[i]; w.life -= dt;
+    if (w.life <= 0) {
+      if (w.type === 'ring') {
+        const n = 10 + Math.min(14, Math.floor(t / 12)), off = rnd(0, Math.PI * 2);
+        for (let k = 0; k < n; k++) fire(w.x, w.y, off + k / n * Math.PI * 2, 44 + t * 0.35, 'ring');
+      } else fire(w.x, w.y, w.a, 270, 'sniper');
+      warns.splice(i, 1);
+    }
+  }
+
+  // bullets + collision
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) { bullets.splice(i, 1); continue; }
+    if (Math.hypot(b.x - player.x, b.y - player.y) < P_R + b.r - 0.6) { die(); return; }
+  }
+}
+
+function die() {
+  mode = 'dying'; deathT = 0.75; shake = 0.35; flash = 1;
+  for (let i = 0; i < 28; i++) {
+    const a = rnd(0, Math.PI * 2), s = rnd(20, 110);
+    parts.push({ x: player.x, y: player.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: rnd(0.4, 0.9) });
+  }
+}
+
+async function gameOver() {
+  mode = 'over';
+  const ms = Math.floor(t * 1000);
+  const isNew = ms > myBest;
+  $('overTime').textContent = fmt(ms);
+  $('overNew').hidden = !isNew;
+  $('overInfo').textContent = '';
+  show('ovOver');
+  $('retryBtn').focus();
+  if (isNew) { myBest = ms; pendingBest = ms; $('best').textContent = 'BEST ' + fmt(myBest); }
+  if (pendingBest > 0) {
+    $('overInfo').textContent = '기록 저장 중…';
+    try {
+      const saved = await backend.submit(nick, pendingBest);
+      myBest = Math.max(myBest, saved); pendingBest = 0;
+      const { rank, total } = await backend.rank(myBest);
+      $('overInfo').textContent = `최고 기록 ${fmt(myBest)}초 · 전체 ${total}명 중 ${rank}위`;
+    } catch (c) {
+      $('overInfo').textContent = c === 'taken'
+        ? '이 닉네임은 다른 기기 소유라 저장되지 않았어요. 닉네임을 바꿔 주세요.'
+        : '기록을 저장하지 못했어요. 다음 판이 끝날 때 다시 저장을 시도합니다.';
+    }
+  } else {
+    try {
+      const { rank, total } = await backend.rank(myBest);
+      $('overInfo').textContent = `최고 기록 ${fmt(myBest)}초 · 전체 ${total}명 중 ${rank}위`;
+    } catch { $('overInfo').textContent = `최고 기록 ${fmt(myBest)}초`; }
+  }
+  renderBoard();
+}
+
+function toReady() { reset(); mode = 'ready'; show('ovReady'); $('startBtn').focus(); }
+function startGame() { reset(); mode = 'play'; show(null); acc = 0; }
+function pause() { if (mode === 'play') { mode = 'paused'; show('ovPause'); $('resumeBtn').focus(); } }
+function resume() { if (mode === 'paused') { mode = 'play'; show(null); acc = 0; last = performance.now(); } }
+
+$('startBtn').onclick = startGame;
+$('retryBtn').onclick = startGame;
+$('resumeBtn').onclick = resume;
+$('changeNickBtn').onclick = toNick;
+
+// ───────────────────────── input ─────────────────────────
+const keys = new Set();
+const slow = () => keys.has('ShiftLeft') || keys.has('ShiftRight');
+addEventListener('keydown', e => {
+  if (e.target instanceof HTMLInputElement) return;
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault();
+  keys.add(e.code);
+  if (e.code === 'Space' || e.code === 'Enter') {
+    if (e.repeat) return;
+    if (mode === 'ready' || mode === 'over') { e.preventDefault(); startGame(); }
+    else if (mode === 'paused') { e.preventDefault(); resume(); }
+  }
+  if ((e.code === 'KeyP' || e.code === 'Escape') && mode === 'play') pause();
+});
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('blur', () => { keys.clear(); pause(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+
+let dragDX = 0, dragDY = 0, lastPtr = null;
+const stage = $('stage');
+stage.addEventListener('pointerdown', e => {
+  if (e.target.closest('button, input, form')) return;
+  if (mode === 'ready' || mode === 'over') { startGame(); }
+  lastPtr = { x: e.clientX, y: e.clientY };
+  stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener('pointermove', e => {
+  if (!lastPtr || mode !== 'play') return;
+  const scale = cv.getBoundingClientRect().width / W;
+  dragDX += (e.clientX - lastPtr.x) / scale * 1.1;
+  dragDY += (e.clientY - lastPtr.y) / scale * 1.1;
+  lastPtr = { x: e.clientX, y: e.clientY };
+});
+const endPtr = () => { lastPtr = null; };
+stage.addEventListener('pointerup', endPtr);
+stage.addEventListener('pointercancel', endPtr);
+
+// ───────────────────────── render ─────────────────────────
+function render(dt) {
+  ctx.save();
+  if (shake > 0) ctx.translate(Math.round(rnd(-2, 2)), Math.round(rnd(-2, 2)));
+
+  ctx.fillStyle = '#0e0f1a'; ctx.fillRect(-4, -4, W + 8, H + 8);
+  ctx.fillStyle = '#1d2036';
+  for (let y = 10; y < H; y += 16) for (let x = 8; x < W; x += 16) ctx.fillRect(x, y, 1, 1);
+
+  // warnings
+  for (const w of warns) {
+    const blink = Math.floor(w.life * 14) % 2 === 0;
+    if (w.type === 'ring') {
+      if (blink) {
+        const g = ball(4, '#b388ff', '#0e0f1a');
+        ctx.drawImage(g, Math.round(w.x - 4), Math.round(w.y - 4));
+      }
+    } else {
+      ctx.fillStyle = blink ? 'rgba(255,93,115,.55)' : 'rgba(255,93,115,.2)';
+      const len = 400, cos = Math.cos(w.a), sin = Math.sin(w.a);
+      for (let d = 0; d < len; d += 4) ctx.fillRect(Math.round(w.x + cos * d), Math.round(w.y + sin * d), 1, 1);
+    }
+  }
+
+  // bullets
+  for (const b of bullets) {
+    const k = KINDS[b.kind];
+    ctx.drawImage(ball(k.r, k.edge, k.core), Math.round(b.x - k.r), Math.round(b.y - k.r));
+  }
+
+  // player
+  if (mode !== 'dying' && mode !== 'over') {
+    const px = Math.round(player.x), py = Math.round(player.y);
+    ctx.fillStyle = '#7cf2c2';
+    ctx.fillRect(px - 2, py - 3, 5, 7);
+    ctx.fillRect(px - 3, py - 2, 7, 5);
+    ctx.fillStyle = '#2b8f6b';
+    ctx.fillRect(px - 3, py + 2, 7, 1);
+    ctx.fillStyle = '#0e0f1a';
+    ctx.fillRect(px - 1, py - 1, 1, 1); ctx.fillRect(px + 1, py - 1, 1, 1);
+    if (slow()) { ctx.fillStyle = '#ffffff'; ctx.fillRect(px - 1, py, 3, 2); ctx.fillStyle = '#ff5d73'; ctx.fillRect(px, py, 1, 1); }
+  }
+
+  // particles
+  ctx.fillStyle = '#7cf2c2';
+  for (const p of parts) ctx.fillRect(Math.round(p.x), Math.round(p.y), p.life > 0.3 ? 2 : 1, p.life > 0.3 ? 2 : 1);
+
+  if (flash > 0) { ctx.fillStyle = `rgba(255,93,115,${flash * 0.35})`; ctx.fillRect(-4, -4, W + 8, H + 8); }
+  ctx.restore();
+}
+
+// ───────────────────────── loop ─────────────────────────
+let acc = 0, last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (mode === 'play') {
+    acc += dt;
+    while (acc >= STEP && mode === 'play') { step(STEP); acc -= STEP; }
+    $('time').textContent = fmt(t * 1000);
+  }
+  if (shake > 0) shake -= dt;
+  if (flash > 0) flash = Math.max(0, flash - dt * 2.5);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94; p.life -= dt;
+    if (p.life <= 0) parts.splice(i, 1);
+  }
+  if (mode === 'dying') {
+    for (const b of bullets) { b.x += b.vx * dt * 0.15; b.y += b.vy * dt * 0.15; }
+    deathT -= dt; if (deathT <= 0) gameOver();
+  }
+  render(dt);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ───────────────────────── boot ─────────────────────────
+(async () => {
+  renderBoard();
+  const saved = store.get('dodge.nick');
+  if (saved) {
+    try { setNick(await backend.claim(saved)); await loadBest(); renderBoard(); toReady(); return; }
+    catch { /* fall through to nickname screen */ }
+  }
+  toNick();
+})();
+})();
+</script>
+</body>
+</html>
