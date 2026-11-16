@@ -98,6 +98,13 @@ button kbd { background: rgba(8, 36, 26, .15); border-color: rgba(8, 36, 26, .35
   #board { width: auto; }
 }
 @media (prefers-reduced-motion: reduce) { button:active { transform: none; } }
+#surprise {
+  position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+  background: var(--bg); color: var(--amber); font-family: var(--f-ko);
+  font-size: clamp(64px, 16vw, 220px); text-shadow: 6px 6px 0 var(--coral);
+  transition: opacity .3s ease; pointer-events: none;
+}
+#surprise.out { opacity: 0; }
 </style>
 </head>
 <body>
@@ -636,6 +643,19 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// ───────────────────────── surprise (#minchae link, first open only) ─────────────────────────
+if (location.hash === '#minchae') {
+  history.replaceState(null, '', location.pathname + location.search);
+  if (!store.get('dodge.surprise.minchae')) {
+    store.set('dodge.surprise.minchae', '1');
+    const s = document.createElement('div');
+    s.id = 'surprise'; s.textContent = '송민채';
+    document.body.appendChild(s);
+    setTimeout(() => s.classList.add('out'), 1000);
+    setTimeout(() => s.remove(), 1400);
+  }
+}
 
 // ───────────────────────── boot ─────────────────────────
 (async () => {
