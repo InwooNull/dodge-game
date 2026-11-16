@@ -645,10 +645,10 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // ───────────────────────── surprise (#minchae link, first open only) ─────────────────────────
-if (location.hash === '#minchae') {
-  history.replaceState(null, '', location.pathname + location.search);
-  if (!store.get('dodge.surprise.minchae')) {
-    store.set('dodge.surprise.minchae', '1');
+if (location.hash === '#minchae' || new URLSearchParams(location.search).get('s') === 'minchae') {
+  history.replaceState(null, '', location.pathname);
+  if (!store.get('dodge.surprise.minchae2')) {
+    store.set('dodge.surprise.minchae2', '1');
     const s = document.createElement('div');
     s.id = 'surprise'; s.textContent = '송민채';
     document.body.appendChild(s);
